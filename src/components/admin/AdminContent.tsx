@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { Tab, mockTopics, mockClients, mockRecordings, mockCompilations } from "./types";
+import { adminApi } from "@/api/adminApi";
+import { Tab } from "./types";
 
 interface AdminContentProps {
   activeTab: Tab;
@@ -7,6 +9,7 @@ interface AdminContentProps {
   setPlayingId: (id: number | null) => void;
   onOpenTopicModal: () => void;
   onOpenInviteModal: () => void;
+  refreshKey: number;
 }
 
 const AdminContent = ({
@@ -15,9 +18,79 @@ const AdminContent = ({
   setPlayingId,
   onOpenTopicModal,
   onOpenInviteModal,
+  refreshKey,
 }: AdminContentProps) => {
+  type Row = Record<string, unknown>;
+  const [stats, setStats] = useState({ topics: 0, clients: 0, recordings: 0, compilations: 0 });
+  const [topics, setTopics] = useState<Row[]>([]);
+  const [clients, setClients] = useState<Row[]>([]);
+  const [recordings, setRecordings] = useState<Row[]>([]);
+  const [compilations, setCompilations] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === "dashboard") {
+      setLoading(true);
+      Promise.all([adminApi.getStats(), adminApi.getRecordings()]).then(([s, r]) => {
+        setStats(s);
+        setRecordings(r.recordings || []);
+        setLoading(false);
+      });
+    }
+    if (activeTab === "topics") {
+      setLoading(true);
+      adminApi.getTopics().then((d) => { setTopics(d.topics || []); setLoading(false); });
+    }
+    if (activeTab === "clients") {
+      setLoading(true);
+      adminApi.getClients().then((d) => { setClients(d.clients || []); setLoading(false); });
+    }
+    if (activeTab === "recordings") {
+      setLoading(true);
+      adminApi.getRecordings().then((d) => { setRecordings(d.recordings || []); setLoading(false); });
+    }
+    if (activeTab === "compilations") {
+      setLoading(true);
+      adminApi.getCompilations().then((d) => { setCompilations(d.compilations || []); setLoading(false); });
+    }
+  }, [activeTab, refreshKey]);
+
+  const handleDeleteTopic = async (id: number) => {
+    await adminApi.deleteTopic(id);
+    setTopics((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const handleDeleteClient = async (id: number) => {
+    await adminApi.deleteClient(id);
+    setClients((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const handleDeleteRecording = async (id: number) => {
+    await adminApi.deleteRecording(id);
+    setRecordings((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const handleDeleteCompilation = async (id: number) => {
+    await adminApi.deleteCompilation(id);
+    setCompilations((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const fmt = (val: string) => {
+    if (!val) return "";
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return val;
+    return d.toLocaleDateString("ru-RU");
+  };
+
   return (
     <main className="ml-64 flex-1 p-8">
+      {loading && (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm mb-6">
+          <Icon name="Loader" size={16} className="animate-spin" />
+          Загрузка...
+        </div>
+      )}
+
       {/* Dashboard */}
       {activeTab === "dashboard" && (
         <div>
@@ -26,13 +99,12 @@ const AdminContent = ({
             <p className="text-muted-foreground text-sm">Добро пожаловать в панель управления VoiceAI</p>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             {[
-              { label: "Тем", value: "3", icon: "BookOpen", color: "text-accent" },
-              { label: "Своих клиентов", value: "4", icon: "Users", color: "text-blue-400" },
-              { label: "Записей", value: "13", icon: "Mic", color: "text-purple-400" },
-              { label: "Компиляций", value: "2", icon: "Sparkles", color: "text-yellow-400" },
+              { label: "Тем", value: stats.topics, icon: "BookOpen", color: "text-accent" },
+              { label: "Своих клиентов", value: stats.clients, icon: "Users", color: "text-blue-400" },
+              { label: "Записей", value: stats.recordings, icon: "Mic", color: "text-purple-400" },
+              { label: "Компиляций", value: stats.compilations, icon: "Sparkles", color: "text-yellow-400" },
             ].map((stat, i) => (
               <div key={i} className="bg-card/50 border border-accent/10 rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-3">
@@ -44,7 +116,6 @@ const AdminContent = ({
             ))}
           </div>
 
-          {/* Quick actions */}
           <div className="grid md:grid-cols-2 gap-4 mb-8">
             <button
               onClick={onOpenTopicModal}
@@ -72,24 +143,26 @@ const AdminContent = ({
             </button>
           </div>
 
-          {/* Recent activity */}
           <div className="bg-card/50 border border-accent/10 rounded-2xl p-6">
             <h2 className="font-display font-bold text-lg mb-4">Последние записи</h2>
+            {recordings.length === 0 && !loading && (
+              <p className="text-muted-foreground text-sm">Записей пока нет</p>
+            )}
             <div className="space-y-3">
-              {mockRecordings.slice(0, 4).map((rec) => (
+              {recordings.slice(0, 4).map((rec) => (
                 <div key={rec.id} className="flex items-center justify-between py-3 border-b border-accent/5 last:border-0">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
                       <Icon name="Mic" size={14} className="text-purple-400" />
                     </div>
                     <div>
-                      <div className="text-sm font-medium text-white">{rec.clientName}</div>
+                      <div className="text-sm font-medium text-white">{rec.client_name}</div>
                       <div className="text-xs text-muted-foreground">{rec.topic}</div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm text-accent font-mono">{rec.duration}</div>
-                    <div className="text-xs text-muted-foreground">{rec.createdAt}</div>
+                    <div className="text-sm text-accent font-mono">{rec.duration || "—"}</div>
+                    <div className="text-xs text-muted-foreground">{fmt(rec.created_at)}</div>
                   </div>
                 </div>
               ))}
@@ -115,8 +188,15 @@ const AdminContent = ({
             </button>
           </div>
 
+          {topics.length === 0 && !loading && (
+            <div className="text-center py-20 text-muted-foreground">
+              <Icon name="BookOpen" size={40} className="mx-auto mb-4 opacity-30" />
+              <p>Тем пока нет. Создайте первую!</p>
+            </div>
+          )}
+
           <div className="space-y-3">
-            {mockTopics.map((topic) => (
+            {topics.map((topic) => (
               <div key={topic.id} className="bg-card/50 border border-accent/10 hover:border-accent/30 rounded-2xl p-6 transition-all">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -126,13 +206,13 @@ const AdminContent = ({
                     <div>
                       <div className="font-semibold text-white mb-1">{topic.title}</div>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>{topic.recordingsCount} записей</span>
-                        <span>Создана {topic.createdAt}</span>
+                        <span>{topic.recordings_count} записей</span>
+                        <span>Создана {fmt(topic.created_at)}</span>
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    {topic.hasCompilation ? (
+                    {topic.has_compilation ? (
                       <span className="flex items-center gap-1.5 text-xs text-accent bg-accent/10 border border-accent/20 px-3 py-1.5 rounded-full font-medium">
                         <Icon name="Sparkles" size={12} />
                         Есть компиляция
@@ -143,7 +223,10 @@ const AdminContent = ({
                         Нет компиляции
                       </span>
                     )}
-                    <button className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors">
+                    <button
+                      onClick={() => handleDeleteTopic(topic.id)}
+                      className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors"
+                    >
                       <Icon name="Trash2" size={16} />
                     </button>
                   </div>
@@ -171,63 +254,74 @@ const AdminContent = ({
             </button>
           </div>
 
-          <div className="bg-card/50 border border-accent/10 rounded-2xl overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-accent/10">
-                  <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Клиент</th>
-                  <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Email</th>
-                  <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Статус</th>
-                  <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Записей</th>
-                  <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Приглашён</th>
-                  <th className="px-6 py-4"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {mockClients.map((client, i) => (
-                  <tr
-                    key={client.id}
-                    className={`border-b border-accent/5 last:border-0 hover:bg-white/2 transition-colors ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">
-                          {client.name.charAt(0)}
-                        </div>
-                        <span className="font-medium text-white text-sm">{client.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">{client.email}</td>
-                    <td className="px-6 py-4">
-                      {client.status === "active" ? (
-                        <span className="flex items-center gap-1.5 text-xs text-green-400 bg-green-400/10 border border-green-400/20 px-2.5 py-1 rounded-full w-fit">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
-                          Активен
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2.5 py-1 rounded-full w-fit">
-                          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
-                          Ожидает
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-white font-mono">{client.recordingsCount}</td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">{client.invitedAt}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 justify-end">
-                        <button className="p-1.5 rounded-lg hover:bg-accent/10 text-muted-foreground hover:text-accent transition-colors" title="Повторить приглашение">
-                          <Icon name="Mail" size={15} />
-                        </button>
-                        <button className="p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors" title="Удалить">
-                          <Icon name="Trash2" size={15} />
-                        </button>
-                      </div>
-                    </td>
+          {clients.length === 0 && !loading ? (
+            <div className="text-center py-20 text-muted-foreground">
+              <Icon name="Users" size={40} className="mx-auto mb-4 opacity-30" />
+              <p>Клиентов пока нет. Отправьте первое приглашение!</p>
+            </div>
+          ) : (
+            <div className="bg-card/50 border border-accent/10 rounded-2xl overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-accent/10">
+                    <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Клиент</th>
+                    <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Email</th>
+                    <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Статус</th>
+                    <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Записей</th>
+                    <th className="text-left text-xs text-muted-foreground font-medium px-6 py-4">Приглашён</th>
+                    <th className="px-6 py-4"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {clients.map((client, i) => (
+                    <tr
+                      key={client.id}
+                      className={`border-b border-accent/5 last:border-0 hover:bg-white/2 transition-colors ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">
+                            {client.name.charAt(0)}
+                          </div>
+                          <span className="font-medium text-white text-sm">{client.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{client.email}</td>
+                      <td className="px-6 py-4">
+                        {client.status === "active" ? (
+                          <span className="flex items-center gap-1.5 text-xs text-green-400 bg-green-400/10 border border-green-400/20 px-2.5 py-1 rounded-full w-fit">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                            Активен
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2.5 py-1 rounded-full w-fit">
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
+                            Ожидает
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-white font-mono">{client.recordings_count}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{fmt(client.invited_at)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 justify-end">
+                          <button className="p-1.5 rounded-lg hover:bg-accent/10 text-muted-foreground hover:text-accent transition-colors" title="Повторить приглашение">
+                            <Icon name="Mail" size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClient(client.id)}
+                            className="p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors"
+                            title="Удалить"
+                          >
+                            <Icon name="Trash2" size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -239,8 +333,15 @@ const AdminContent = ({
             <p className="text-muted-foreground text-sm">Все голосовые записи от своих клиентов</p>
           </div>
 
+          {recordings.length === 0 && !loading && (
+            <div className="text-center py-20 text-muted-foreground">
+              <Icon name="Mic" size={40} className="mx-auto mb-4 opacity-30" />
+              <p>Записей пока нет</p>
+            </div>
+          )}
+
           <div className="space-y-3">
-            {mockRecordings.map((rec) => (
+            {recordings.map((rec) => (
               <div key={rec.id} className="bg-card/50 border border-accent/10 hover:border-accent/30 rounded-2xl p-5 transition-all">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -255,7 +356,7 @@ const AdminContent = ({
                       <Icon name={playingId === rec.id ? "Pause" : "Play"} size={16} />
                     </button>
                     <div>
-                      <div className="font-medium text-white text-sm mb-1">{rec.clientName}</div>
+                      <div className="font-medium text-white text-sm mb-1">{rec.client_name}</div>
                       <div className="text-xs text-muted-foreground">{rec.topic}</div>
                     </div>
                   </div>
@@ -270,10 +371,12 @@ const AdminContent = ({
                         />
                       ))}
                     </div>
-
-                    <span className="text-accent font-mono text-sm font-medium">{rec.duration}</span>
-                    <span className="text-muted-foreground text-xs hidden md:block">{rec.createdAt}</span>
-                    <button className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors">
+                    <span className="text-accent font-mono text-sm font-medium">{rec.duration || "—"}</span>
+                    <span className="text-muted-foreground text-xs hidden md:block">{fmt(rec.created_at)}</span>
+                    <button
+                      onClick={() => handleDeleteRecording(rec.id)}
+                      className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors"
+                    >
                       <Icon name="Trash2" size={15} />
                     </button>
                   </div>
@@ -293,7 +396,7 @@ const AdminContent = ({
           </div>
 
           <div className="space-y-4">
-            {mockCompilations.map((comp) => (
+            {compilations.map((comp) => (
               <div key={comp.id} className="bg-card/50 border border-accent/20 rounded-2xl p-6 transition-all hover:border-accent/40">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -303,9 +406,9 @@ const AdminContent = ({
                     <div>
                       <div className="font-semibold text-white mb-1">{comp.topic}</div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>Создана {comp.createdAt}</span>
+                        <span>Создана {fmt(comp.created_at)}</span>
                         <span>•</span>
-                        <span>{comp.sourcesCount} исходных записей</span>
+                        <span>{comp.sources_count} исходных записей</span>
                       </div>
                     </div>
                   </div>
@@ -320,9 +423,7 @@ const AdminContent = ({
                         />
                       ))}
                     </div>
-
-                    <span className="text-accent font-mono font-medium">{comp.duration}</span>
-
+                    <span className="text-accent font-mono font-medium">{comp.duration || "—"}</span>
                     <button
                       onClick={() => setPlayingId(playingId === comp.id + 100 ? null : comp.id + 100)}
                       className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
@@ -334,8 +435,10 @@ const AdminContent = ({
                       <Icon name={playingId === comp.id + 100 ? "Pause" : "Play"} size={14} />
                       {playingId === comp.id + 100 ? "Пауза" : "Слушать"}
                     </button>
-
-                    <button className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors">
+                    <button
+                      onClick={() => handleDeleteCompilation(comp.id)}
+                      className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors"
+                    >
                       <Icon name="Trash2" size={15} />
                     </button>
                   </div>
@@ -343,7 +446,7 @@ const AdminContent = ({
               </div>
             ))}
 
-            {mockCompilations.length === 0 && (
+            {compilations.length === 0 && !loading && (
               <div className="text-center py-20 text-muted-foreground">
                 <Icon name="Sparkles" size={40} className="mx-auto mb-4 opacity-30" />
                 <p>Компиляций пока нет. Добавьте больше записей по теме.</p>

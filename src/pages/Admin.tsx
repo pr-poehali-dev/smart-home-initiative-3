@@ -3,6 +3,7 @@ import { Tab } from "@/components/admin/types";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import AdminContent from "@/components/admin/AdminContent";
 import AdminModals from "@/components/admin/AdminModals";
+import { adminApi } from "@/api/adminApi";
 
 const Admin = () => {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -14,25 +15,30 @@ const Admin = () => {
   const [inviteSent, setInviteSent] = useState(false);
   const [topicCreated, setTopicCreated] = useState(false);
   const [playingId, setPlayingId] = useState<number | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const handleSendInvite = () => {
+  const handleSendInvite = async () => {
     if (!inviteEmail || !inviteName) return;
+    await adminApi.inviteClient(inviteName, inviteEmail);
     setInviteSent(true);
     setTimeout(() => {
       setInviteSent(false);
       setShowInviteModal(false);
       setInviteEmail("");
       setInviteName("");
+      setRefreshKey((k) => k + 1);
     }, 2000);
   };
 
-  const handleCreateTopic = () => {
+  const handleCreateTopic = async () => {
     if (!newTopicTitle) return;
+    await adminApi.createTopic(newTopicTitle);
     setTopicCreated(true);
     setTimeout(() => {
       setTopicCreated(false);
       setShowTopicModal(false);
       setNewTopicTitle("");
+      setRefreshKey((k) => k + 1);
     }, 2000);
   };
 
@@ -46,6 +52,7 @@ const Admin = () => {
         setPlayingId={setPlayingId}
         onOpenTopicModal={() => setShowTopicModal(true)}
         onOpenInviteModal={() => setShowInviteModal(true)}
+        refreshKey={refreshKey}
       />
 
       <AdminModals
